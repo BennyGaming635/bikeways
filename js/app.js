@@ -65,10 +65,11 @@ const APP = (() => {
   }
 
   /* ── Waypoints ── */
-  function addWaypoint(latlng, name) {
+  function addWaypoint(latlng, name, straightLine = false) {
     const index = waypoints.length;
     const wp    = L.latLng(latlng.lat, latlng.lng);
-    wp.name     = name || (index === 0 ? 'Start' : `Stop ${index}`);
+    wp.name        = name || (index === 0 ? 'Start' : `Stop ${index}`);
+    wp.straightLine = !!straightLine; // per-segment straight-line flag
     waypoints.push(wp);
 
     const marker = L.marker(latlng, {
@@ -115,6 +116,15 @@ const APP = (() => {
     }
   }
 
+  /** Toggle straight-line (no routing) for the segment starting at this waypoint */
+  function toggleStraightLine(index) {
+    if (waypoints[index]) {
+      waypoints[index].straightLine = !waypoints[index].straightLine;
+      renderWaypointsList();
+      if (waypoints.length >= 2) calculateRoute();
+    }
+  }
+
   function updateWaypointName(index, name) {
     if (waypoints[index]) {
       waypoints[index].name = name;
@@ -154,15 +164,29 @@ const APP = (() => {
       const icon = i === 0 ? '🟢' : i === waypoints.length - 1 ? '🔴' : '🔵';
       const li = document.createElement('li');
       li.className = 'waypoint-item';
+
+      // Straight-line toggle for every waypoint except the last (which has no outgoing segment)
+      const isLast = i === waypoints.length - 1;
+      const straightBtn = isLast ? '' : `
+        <button class="wp-straight${wp.straightLine ? ' active' : ''}" data-idx="${i}"
+          title="${wp.straightLine ? 'Segment: straight line (click to use bike route)' : 'Segment: bike route (click to use straight line)'}">
+          ${wp.straightLine ? '📐' : '🚲'}
+        </button>`;
+
       li.innerHTML = `
         <span class="wp-icon">${icon}</span>
         <div style="flex:1;min-width:0">
           <div class="wp-name">${sanitize(wp.name)}</div>
           <div class="wp-coords">${wp.lat.toFixed(5)}, ${wp.lng.toFixed(5)}</div>
         </div>
+        ${straightBtn}
         <button class="wp-remove" data-idx="${i}" title="Remove">✕</button>
       `;
       ul.appendChild(li);
+    });
+
+    ul.querySelectorAll('.wp-straight').forEach(btn => {
+      btn.addEventListener('click', () => toggleStraightLine(+btn.dataset.idx));
     });
 
     ul.querySelectorAll('.wp-remove').forEach(btn => {
@@ -171,39 +195,99 @@ const APP = (() => {
   }
 
   /* ── Routing ── */
+
+  /** Estimate cycling duration (seconds) from a straight-line distance (metres). */
+  const AVG_CYCLING_MS = 15000 / 3600; // 15 km/h in m/s
+
   async function calculateRoute() {
     if (waypoints.length < 2) return;
     clearRouteLayer();
     showSpinner(true);
 
-    const coords = waypoints.map(w => `${w.lng.toFixed(6)},${w.lat.toFixed(6)}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/cycling/${coords}` +
-                `?geometries=geojson&overview=full&steps=false`;
+    let totalDistance = 0;
+    let totalDuration = 0;
+    const allGeoCoords = []; // [lng, lat] pairs for synthesised routeData
+    const segmentGroup = L.featureGroup();
+    let hasAutoFallback = false;
+
+    /** Append straight-line coordinates, deduplicating the shared endpoint */
+    function pushStraightCoords(fromWp, toWp) {
+      if (allGeoCoords.length === 0) allGeoCoords.push([fromWp.lng, fromWp.lat]);
+      allGeoCoords.push([toWp.lng, toWp.lat]);
+    }
 
     try {
-      const res  = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        const from      = waypoints[i];
+        const to        = waypoints[i + 1];
+        const fromLatLng = L.latLng(from.lat, from.lng);
+        const toLatLng   = L.latLng(to.lat,   to.lng);
+        const dist       = fromLatLng.distanceTo(toLatLng);
 
-      if (!data.routes?.length) throw new Error('No route found');
+        if (from.straightLine) {
+          /* ── User-requested straight line for this segment ── */
+          totalDistance += dist;
+          totalDuration += dist / AVG_CYCLING_MS;
+          L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
+            color: '#ff9800', weight: 4, dashArray: '8,6', opacity: 0.75
+          }).addTo(segmentGroup);
+          pushStraightCoords(from, to);
+        } else {
+          /* ── Try OSRM cycling routing for this segment ── */
+          try {
+            const coords = `${from.lng.toFixed(6)},${from.lat.toFixed(6)};` +
+                           `${to.lng.toFixed(6)},${to.lat.toFixed(6)}`;
+            const url = `https://router.project-osrm.org/route/v1/cycling/${coords}` +
+                        `?geometries=geojson&overview=full&steps=false`;
 
-      routeData = data.routes[0];
-      _elevationData = null; // OSRM doesn't return elevation
+            const res  = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (!data.routes?.length) throw new Error('No route found');
 
-      routeLayer = L.geoJSON(routeData.geometry, {
-        style: { color: '#00bcd4', weight: 6, opacity: 0.85 }
-      }).addTo(map);
+            const route = data.routes[0];
+            totalDistance += route.distance;
+            totalDuration += route.duration;
 
-      showRouteInfo(routeData.distance, routeData.duration);
+            L.geoJSON(route.geometry, {
+              style: { color: '#00bcd4', weight: 6, opacity: 0.85 }
+            }).addTo(segmentGroup);
+
+            // Append coordinates (skip first point on subsequent segments to avoid duplicates)
+            const segCoords = route.geometry.coordinates;
+            const start     = allGeoCoords.length === 0 ? 0 : 1;
+            segCoords.slice(start).forEach(c => allGeoCoords.push(c));
+          } catch (err) {
+            /* Auto-fallback: route unavailable – draw straight line */
+            console.warn(`Routing error for segment ${i}→${i + 1}:`, err);
+            hasAutoFallback = true;
+            totalDistance += dist;
+            totalDuration += dist / AVG_CYCLING_MS;
+            L.polyline([[from.lat, from.lng], [to.lat, to.lng]], {
+              color: '#ff9800', weight: 4, dashArray: '8,6', opacity: 0.75
+            }).addTo(segmentGroup);
+            pushStraightCoords(from, to);
+          }
+        }
+      }
+
+      routeLayer = segmentGroup;
+      segmentGroup.addTo(map);
+
+      routeData = {
+        geometry: { coordinates: allGeoCoords },
+        distance: totalDistance,
+        duration: totalDuration
+      };
+      _elevationData = null;
+
+      showRouteInfo(totalDistance, totalDuration);
+
+      if (hasAutoFallback) {
+        showStatus('⚠ Some segments unavailable – showing straight lines.');
+      }
+
       Share.updateURL();
-    } catch (err) {
-      console.warn('Routing error:', err);
-      // Fallback: draw straight-line segments
-      const latlngs = waypoints.map(w => [w.lat, w.lng]);
-      routeLayer = L.polyline(latlngs, {
-        color: '#ff9800', weight: 4, dashArray: '8,6', opacity: 0.75
-      }).addTo(map);
-      showStatus('⚠ Routing unavailable – showing straight lines.');
     } finally {
       showSpinner(false);
     }
@@ -406,6 +490,7 @@ const APP = (() => {
     get _elevationData(){ return _elevationData; },
     addWaypoint,
     removeWaypoint,
+    toggleStraightLine,
     clearAll,
     drawTrackDirectly,
     fitMapToRoute

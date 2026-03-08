@@ -143,6 +143,19 @@ body {
 }
 .waypoint-item .wp-remove:hover { color: var(--red); background: rgba(239,83,80,.1); }
 
+.waypoint-item .wp-straight {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1em;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity .15s, background .15s;
+}
+.waypoint-item .wp-straight:hover { opacity: 1; background: rgba(255,152,0,.1); }
+.waypoint-item .wp-straight.active { opacity: 1; background: rgba(255,152,0,.15); }
+
 .btn-row { margin-top: 8px; }
 
 /* Route info */
