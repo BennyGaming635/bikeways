@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bikeways – Bike Route Planner</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ── Sidebar ── -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <span class="logo">🚴</span>
+      <div>
+        <h1>Bikeways</h1>
+        <p>Bike Route Planner</p>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="sidebar-section" id="search-section">
+      <label class="section-label">🔍 Search location</label>
+      <div class="search-row">
+        <input id="search-input" type="text" placeholder="City, address, place…" autocomplete="off" />
+        <button id="search-btn" title="Search">↵</button>
+      </div>
+      <ul id="search-results"></ul>
+    </div>
+
+    <!-- Waypoints -->
+    <div class="sidebar-section" id="waypoints-section">
+      <label class="section-label">📍 Waypoints
+        <span class="hint">(click map to add)</span>
+      </label>
+      <ul id="waypoints-list"></ul>
+      <div class="btn-row">
+        <button class="btn-secondary" id="clear-btn">🗑 Clear all</button>
+      </div>
+    </div>
+
+    <!-- Route info -->
+    <div class="sidebar-section" id="route-info" style="display:none">
+      <label class="section-label">📊 Route info</label>
+      <div class="info-grid">
+        <div class="info-card">
+          <span class="info-icon">📏</span>
+          <div>
+            <div class="info-value" id="info-distance">—</div>
+            <div class="info-unit">distance</div>
+          </div>
+        </div>
+        <div class="info-card">
+          <span class="info-icon">⏱</span>
+          <div>
+            <div class="info-value" id="info-duration">—</div>
+            <div class="info-unit">est. cycling time</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="sidebar-section" id="actions-section">
+      <label class="section-label">⚡ Actions</label>
+      <button class="btn-action" id="share-btn">📤 Share route via link</button>
+      <button class="btn-action" id="export-gpx-btn">💾 Export GPX</button>
+      <button class="btn-action" id="import-gpx-btn">📂 Import GPX</button>
+      <input type="file" id="gpx-file-input" accept=".gpx" style="display:none" />
+      <button class="btn-action btn-flyover" id="flyover-btn">🎬 Create flyover video</button>
+    </div>
+
+    <div id="sidebar-footer">
+      <span>Routing: <a href="https://project-osrm.org/" target="_blank" rel="noopener">OSRM cycling</a></span>
+      <span>Map: <a href="https://www.cyclosm.org/" target="_blank" rel="noopener">CyclOSM</a></span>
+    </div>
+  </aside>
+
+  <!-- ── Map ── -->
+  <div id="map"></div>
+
+  <!-- ── Share modal ── -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <!-- Share -->
+    <div id="share-modal" class="modal hidden">
+      <div class="modal-header">
+        <h2>📤 Share route</h2>
+        <button class="modal-close" data-modal="share-modal">✕</button>
+      </div>
+      <p class="modal-desc">Anyone with this link can open your route:</p>
+      <div class="url-row">
+        <input id="share-url-input" type="text" readonly />
+        <button id="copy-url-btn">Copy</button>
+      </div>
+    </div>
+
+    <!-- Flyover -->
+    <div id="flyover-modal" class="modal modal-wide hidden">
+      <div class="modal-header">
+        <h2>🎬 Route flyover</h2>
+        <button class="modal-close" data-modal="flyover-modal">✕</button>
+      </div>
+      <p class="modal-desc">Preview your route as an animated flyover, then record it as a WebM video.</p>
+      <canvas id="flyover-canvas"></canvas>
+      <div class="flyover-controls">
+        <button id="flyover-preview-btn" class="btn-secondary">▶ Preview</button>
+        <button id="flyover-record-btn" class="btn-action">⏺ Record video</button>
+        <button id="flyover-stop-btn" class="btn-secondary" disabled>⏹ Stop</button>
+      </div>
+      <div id="flyover-status"></div>
+    </div>
+  </div>
+
+  <!-- Scripts (order matters) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="js/gpx.js"></script>
+  <script src="js/share.js"></script>
+  <script src="js/flyover.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
