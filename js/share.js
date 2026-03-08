@@ -4,10 +4,12 @@
  * Waypoints are encoded as a query-string parameter so anyone with the
  * link can open exactly the same route.
  *
- * Format:  ?waypoints=lat,lng,name|lat,lng,name|…
- *   – commas separate the three fields per waypoint
+ * Format:  ?waypoints=lat,lng,name,sl|lat,lng,name,sl|…
+ *   – commas separate the four fields per waypoint
  *   – pipes  separate waypoints
  *   – names are URI-encoded to handle spaces / special chars
+ *   – sl (straight-line flag) is 1 if the segment FROM this waypoint uses a
+ *     straight line instead of bike routing; 0 or omitted otherwise
  */
 const Share = (() => {
   /* ── Encode current route into the URL ── */
@@ -22,7 +24,8 @@ const Share = (() => {
     const encoded = APP.waypoints
       .map(w => {
         const name = encodeURIComponent(w.name || '');
-        return `${w.lat.toFixed(6)},${w.lng.toFixed(6)},${name}`;
+        const sl   = w.straightLine ? '1' : '0';
+        return `${w.lat.toFixed(6)},${w.lng.toFixed(6)},${name},${sl}`;
       })
       .join('|');
 
@@ -48,8 +51,9 @@ const Share = (() => {
         try { name = decodeURIComponent(segments[2]); }
         catch { name = ''; }
       }
+      const straightLine = segments[3] === '1';
       if (!isNaN(lat) && !isNaN(lng)) {
-        APP.addWaypoint(L.latLng(lat, lng), name || undefined);
+        APP.addWaypoint(L.latLng(lat, lng), name || undefined, straightLine);
       }
     });
 
